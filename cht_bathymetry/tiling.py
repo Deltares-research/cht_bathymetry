@@ -14,8 +14,8 @@ import yaml
 
 from pyproj import CRS
 
-import cht.misc.fileops as fo
-import cht.misc.xmlkit as xml
+import cht_utils.fileops as fo
+import cht_utils.xmlkit as xml
 
 class TiledDatasetLevel:
     def __init__(self, name, path, ilev):

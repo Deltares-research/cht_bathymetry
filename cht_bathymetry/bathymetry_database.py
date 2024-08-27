@@ -15,7 +15,7 @@ import yaml
 from shutil import copyfile
 from pyproj import CRS
 from pyproj import Transformer
-from cht.misc.misc_tools import interp2
+from cht_utils.misc_tools import interp2
 
 class ZoomLevel:
 

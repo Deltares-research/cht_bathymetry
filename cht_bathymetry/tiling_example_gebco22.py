@@ -6,7 +6,7 @@ Created on Wed Sep 21 13:48:55 2022
 """
 import glob
 
-from cht.bathymetry.tiling import TiledDataset
+from cht_bathymetry.tiling import TiledDataset
 
 name      = "gebco22"
 

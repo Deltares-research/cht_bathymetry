@@ -7,7 +7,7 @@ Created on Wed Sep 21 13:48:55 2022
 import glob
 import cht
 
-from cht.bathymetry.tiling import TiledDataset
+from cht_tiling.tiling import TiledDataset
 
 name      = "new_jersey_delaware_coned_2015"
 long_name = "2015 USGS CoNED Topobathymetric Model: New Jersey and Delaware (1888 - 2014)"
