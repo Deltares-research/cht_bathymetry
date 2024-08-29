@@ -2,3 +2,4 @@ __pycache__
 launch.json
 _build
 dist
+/cht_bathymetry.egg-info
