@@ -558,6 +558,7 @@ class BathymetryDataset:
                                         os.mkdir(localdir)
                                     # Download file    
                                     try:
+                                        print("Downloading tile " + file_name + " ...") 
                                         urllib.request.urlretrieve(remotedir + file_name,
                                                                        full_file_name)
                                     except:
