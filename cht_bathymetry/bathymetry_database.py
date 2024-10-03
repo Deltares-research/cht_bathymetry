@@ -158,6 +158,10 @@ class BathymetryDatabase:
         # Loop through bathymetry datasets
         for ibathy, bathymetry in enumerate(bathymetry_list):
             dataset = bathymetry["dataset"]
+            if "zmin" not in bathymetry:
+                bathymetry["zmin"] = -20000.0
+            if "zmax" not in bathymetry:
+                bathymetry["zmax"] = 20000.0
             zmin    = bathymetry["zmin"]
             zmax    = bathymetry["zmax"]
             transformer = Transformer.from_crs(crs,
@@ -192,6 +196,7 @@ class BathymetryDatabase:
         for dataset in self.dataset:
             if dataset.name == name:
                 return dataset
+        print("Warning! Dataset " + name + " not found in bathymetry database.")    
         return None
 
     def dataset_names(self, source=None):
