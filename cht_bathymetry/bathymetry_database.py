@@ -74,7 +74,7 @@ class BathymetryDatabase:
                 dataset = BathymetryDatasetNetCDFTilesV1(name, path)
             elif dataset_format == "netcdf_tiles_v2":
                 dataset = BathymetryDatasetNetCDFTilesV2(name, path)
-            elif dataset_format == "web_map_tiles":
+            elif dataset_format == "tiled_web_map":
                 dataset = BathymetryDatasetTiledWebMap(name, path)
 
             dataset.database = self    
@@ -132,7 +132,7 @@ class BathymetryDatabase:
         # Loop through bathymetry datasets
         for ibathy, bathymetry in enumerate(bathymetry_list):
 
-            dataset_name = bathymetry["dataset"] # name
+            dataset_name = bathymetry["name"] # name
             zmin         = bathymetry["zmin"]
             zmax         = bathymetry["zmax"]
 

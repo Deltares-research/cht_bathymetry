@@ -24,7 +24,7 @@ class BathymetryDatasetTiledWebMap(BathymetryDataset):
         self.path              = path
         self.local_path        = path
         self.read_metadata()
-        self.data = TiledWebMap(self.local_path, "elevation")
+        self.data = TiledWebMap(self.local_path, name, parameter="elevation")
             
     def get_data(self, xl, yl, max_cell_size):
         """
