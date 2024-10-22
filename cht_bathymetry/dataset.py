@@ -35,6 +35,13 @@ class BathymetryDataset:
         tml = toml.load(tml_file)
         for key in tml:
             setattr(self, key, tml[key])
+        # Long name for backwards compatibility
+        if "longname" in tml:
+            self.long_name = tml["longname"]
+        # Make sure there is always a long_name
+        if self.long_name == "":
+            self.long_name = self.name        
+
         self.crs = CRS(self.coord_ref_sys_name)
             
     def get_data(self):
