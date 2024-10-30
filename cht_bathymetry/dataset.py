@@ -32,6 +32,8 @@ class BathymetryDataset:
     def read_metadata(self):
         # Read metadata file
         tml_file = os.path.join(self.local_path, self.name + ".tml")
+        if not os.path.exists(tml_file):
+            tml_file = os.path.join(self.local_path, "metadata.tml")
         tml = toml.load(tml_file)
         for key in tml:
             setattr(self, key, tml[key])

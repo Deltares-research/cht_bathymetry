@@ -60,7 +60,7 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
             zl.nr_tiles_y = ds['nr_tiles_y'][izoom]
             self.zoom_level.append(zl)
             
-    def get_data(self, xl, yl, max_cell_size):
+    def get_data(self, xl, yl, max_cell_size, waitbox=None):
         """
         Reads data from database. Returns x, y, z in same coordinate system as dataset. Resolution is determined by max_cell_size.
         """

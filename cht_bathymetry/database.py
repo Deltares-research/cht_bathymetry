@@ -63,6 +63,9 @@ class BathymetryDatabase:
             if os.path.exists(fname):
                 metadata = toml.load(fname)
                 dataset_format = metadata["format"]
+            elif os.path.exists(os.path.join(path, "metadata.tml")):
+                metadata = toml.load(os.path.join(path, "metadata.tml"))
+                dataset_format = metadata["format"]
             else:
                 print("Could not find metadata file for dataset " + name + " ! Skipping dataset.")
                 continue
@@ -99,7 +102,11 @@ class BathymetryDatabase:
         zz = self.get_bathymetry_on_grid(xz, yz, crs, bathymetry_list, method=method, coords="points", dxmin=dxmin)
         return zz
 
-    def get_bathymetry_on_grid(self, xz, yz, crs, bathymetry_list, method="linear", coords="grid", dxmin=1.0e6):
+    def get_bathymetry_on_grid(self, xz, yz, crs, bathymetry_list,
+                               method="linear",
+                               coords="grid",
+                               dxmin=1.0e6,
+                               waitbox=None):
 
         if xz.ndim == 2:
             # xy and yz are a grid
@@ -153,7 +160,8 @@ class BathymetryDatabase:
                 # Get DEM data
                 xb, yb, zb = dataset.get_data(xl,
                                               yl,
-                                              max_cell_size=dx)
+                                              max_cell_size=dx,
+                                              waitbox=waitbox)
 
                 # If zb equal np.nan, then there is not data
                 if not np.isnan(zb).all():

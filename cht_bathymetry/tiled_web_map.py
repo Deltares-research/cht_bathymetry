@@ -26,10 +26,10 @@ class BathymetryDatasetTiledWebMap(BathymetryDataset):
         self.read_metadata()
         self.data = TiledWebMap(self.local_path, name, parameter="elevation")
             
-    def get_data(self, xl, yl, max_cell_size):
+    def get_data(self, xl, yl, max_cell_size, waitbox=None):
         """
         Reads data from database. Returns x, y, z in same coordinate system (3857) as dataset. Resolution is determined by max_cell_size.
         """
-        x, y, z = self.data.get_data(xl, yl, max_cell_size)
+        x, y, z = self.data.get_data(xl, yl, max_cell_size, waitbox=waitbox)
         
         return x, y, z
