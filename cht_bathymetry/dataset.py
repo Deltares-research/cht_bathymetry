@@ -48,3 +48,6 @@ class BathymetryDataset:
             
     def get_data(self):
         pass
+
+    def get_bbox(self, **kwargs):
+        pass

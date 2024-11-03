@@ -13,8 +13,10 @@ import urllib
 import netCDF4 as nc
 import yaml
 from shutil import copyfile
-# from pyproj import CRS
-# from pyproj import Transformer
+from shapely.geometry import LineString
+import geopandas as gpd
+from pyproj import CRS
+from pyproj import Transformer
 # from cht_utils.misc_tools import interp2
 
 from .dataset import BathymetryDataset
@@ -66,6 +68,31 @@ class BathymetryDatasetNetCDFTilesV1(BathymetryDataset):
             zl.nr_tiles_x = ds['ntilesx'][izoom]
             zl.nr_tiles_y = ds['ntilesy'][izoom]
             self.zoom_level.append(zl)            
+
+    def get_bbox(self, crs=None):
+        """
+        Returns bounding box of dataset in CRS of dataset, unless crs is specified.
+        """
+        if crs is None:
+            crs = self.crs
+        x0 = self.zoom_level[0].x0
+        y0 = self.zoom_level[0].y0
+        dx = self.zoom_level[0].dx
+        dy = self.zoom_level[0].dy
+        nx = self.zoom_level[0].nr_tiles_x*self.pixels_in_tile
+        ny = self.zoom_level[0].nr_tiles_y*self.pixels_in_tile
+        x1 = x0 + nx*dx
+        y1 = y0 + ny*dy
+        # Create shapely linestring
+        geom = LineString([(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)])
+        # Make gdf
+        gdf = gpd.GeoDataFrame(geometry=[geom], crs=self.crs)
+        gdf_target = gdf.to_crs(crs)
+        x0, y0 = gdf_target.geometry[0].bounds[0:2]
+        x1, y1 = gdf_target.geometry[0].bounds[2:4]
+
+        return [x0, x1], [y0, y1]
+
 
     def get_data(self, xl, yl, max_cell_size, waitbox=None):
         """
