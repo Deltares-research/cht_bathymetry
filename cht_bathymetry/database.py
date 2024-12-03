@@ -268,7 +268,7 @@ class BathymetryDatabase:
                                               max_cell_size=dx,
                                               waitbox=waitbox)
 
-                # If zb equal np.nan, then there is not data
+                # If zb equal np.nan, then there is no data
                 if not np.isnan(zb).all():
                     zb[np.where(zb < zmin)] = np.nan
                     zb[np.where(zb > zmax)] = np.nan
