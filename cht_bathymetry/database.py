@@ -211,7 +211,8 @@ class BathymetryDatabase:
                                method="linear",
                                coords="grid",
                                dxmin=1.0e6,
-                               waitbox=None):
+                               waitbox=None,
+                               buffer=0.2):
 
         if xz.ndim == 2:
             # xy and yz are a grid
@@ -241,6 +242,11 @@ class BathymetryDatabase:
         # Loop through bathymetry datasets
         for ibathy, bathymetry in enumerate(bathymetry_list):
 
+            if "zmin" not in bathymetry:
+                bathymetry["zmin"] = -1.0e9
+            if "zmax" not in bathymetry:
+                bathymetry["zmax"] = 1.0e9
+
             dataset_name = bathymetry["name"] # name
             zmin         = bathymetry["zmin"]
             zmax         = bathymetry["zmax"]
@@ -257,8 +263,8 @@ class BathymetryDatabase:
                 xmax = np.nanmax(np.nanmax(xzb))
                 ymin = np.nanmin(np.nanmin(yzb))
                 ymax = np.nanmax(np.nanmax(yzb))
-                ddx = 0.05 * (xmax - xmin)
-                ddy = 0.05 * (ymax - ymin)
+                ddx = buffer * (xmax - xmin)
+                ddy = buffer * (ymax - ymin)
                 xl = [xmin - ddx, xmax + ddx]
                 yl = [ymin - ddy, ymax + ddy]
 
@@ -272,6 +278,7 @@ class BathymetryDatabase:
                 if not np.isnan(zb).all():
                     zb[np.where(zb < zmin)] = np.nan
                     zb[np.where(zb > zmax)] = np.nan
+                    #zz1 = interp2_bilinear(xb, yb, zb, xzb, yzb)
                     zz1 = interp2(xb, yb, zb, xzb, yzb, method=method)
                     isn = np.where(np.isnan(zz))
                     zz[isn] = zz1[isn]
