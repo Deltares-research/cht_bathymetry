@@ -32,21 +32,18 @@ class BathymetryDatabase:
                  path=None,
                  s3_bucket=None,
                  s3_key=None,
-                 s3_region=None):
-        self.path    = None
+                 s3_region=None,
+                 check_online=False):
         self.dataset = []
-        self.initialized = False
         self.s3_client = None
         self.s3_bucket = s3_bucket
         self.s3_key = s3_key
         self.s3_region = s3_region
-        if path is not None:
-            self.initialize(path)
-    
-    def initialize(self, path):
         self.path    = path
         self.dataset = []
         self.read()
+        if check_online:
+            self.check_online_database()
         self.initialized = True
        
     def read(self):
