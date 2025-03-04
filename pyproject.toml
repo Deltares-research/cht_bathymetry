@@ -10,16 +10,16 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "numpy",
-	"shapely",
-    "pandas",
+	"hydromt",
     "pyproj",
     "rasterio",
     "xarray",
-    "matplotlib",
-    "netCDF4",
-    "pyyaml",
-    "toml",
     "boto3",
     "cht-utils",
+    "numpy",
+    "pyyaml",
+    "toml",
+	"shapely",
+    "geopandas",
+    "netCDF4",
 ]
