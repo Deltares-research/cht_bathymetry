@@ -7,9 +7,11 @@ Created on Sun Apr 25 10:58:08 2021
 import xarray as xr
 from pathlib import Path
 import rasterio
-import time
+# from rasterio.enums import Resampling
+# from rasterio.windows import from_bounds
+import rioxarray
 
-from hydromt import DataCatalog
+# from hydromt import DataCatalog
 
 from .dataset import BathymetryDataset
 
@@ -32,34 +34,59 @@ class BathymetryDatasetCOG(BathymetryDataset):
             with rasterio.open(self.path) as dataset:
                 self.crs = dataset.crs
             
-    def get_data(self, xl, yl, max_cell_size, waitbox=None):
+    def get_data(self, xl, yl, max_cell_size=1000.0, waitbox=None):
         """
         Reads data from database. Returns xarray dataset in same coordinate system (3857) as dataset. Resolution is determined by max_cell_size.
         """
 
-        bbox=(xl[0], xl[1], yl[0], yl[1])
+        # First find appropriate overview level based on max pixel size
+        with rasterio.open(self.path) as src:
+            overview_level = get_appropriate_overview_level(src, max_cell_size)
 
-        time0 = time.time()
+        rds = rioxarray.open_rasterio(self.path,
+                                      masked=False,
+                                      overview_level=overview_level)
 
-        dc = DataCatalog()
-        da_elv = dc.get_rasterdataset(
-            self.path,
-            bbox=bbox,
-            buffer=10,
-            variables=["elevtn"],
-            zoom=(max_cell_size, "meter"),
+        data = rds.rio.clip_box(
+            minx=xl[0],
+            miny=yl[0],
+            maxx=xl[1],
+            maxy=yl[1],
         )
-        time1 = time.time()
+        x = data.x.values[:]
+        y = data.y.values[:]
+        z = data.values[0,:,:]
 
-        print(f"Time to get data array: {(time1-time0):.2f} s")
-
-        time0 = time.time()
-        x = da_elv.x.values[:]
-        y = da_elv.y.values[:]
-        z = da_elv.values[:]
-        time1 = time.time()
-
-        print(f"Time to read data to numpy arrays: {(time1-time0):.2f} s")
+        rds.close()
 
         return x, y, z
+
+def get_appropriate_overview_level(src, max_pixel_size):
+    """
+    Given a rasterio dataset `src` and a desired `max_pixel_size`, 
+    determine the appropriate overview level (zoom level) that fits 
+    the maximum resolution allowed by `max_pixel_size`.
+    """
+    # Get the original resolution (pixel size) in terms of x and y
+    original_resolution = src.res  # Tuple of (x_resolution, y_resolution)
+    if src.crs.is_geographic:
+        original_resolution = original_resolution[0] * 111000, original_resolution[1] * 111000  # Convert to meters
+    # Get the overviews for the dataset
+    overview_levels = src.overviews(1)  # Overview levels for the first band (if multi-band, you can adjust this)
     
+    # If there are no overviews, return 0 (native resolution)
+    if not overview_levels:
+        return 0
+    
+    # Calculate the resolution for each overview by multiplying the original resolution by the overview factor
+    resolutions = [(original_resolution[0] * factor, original_resolution[1] * factor) for factor in overview_levels]
+    
+    # Find the highest overview level that is smaller than or equal to the max_pixel_size
+    selected_overview = 0
+    for i, (x_res, y_res) in enumerate(resolutions):
+        if x_res <= max_pixel_size and y_res <= max_pixel_size:
+            selected_overview = i
+        else:
+            break
+
+    return selected_overview

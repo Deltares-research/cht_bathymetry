@@ -13,6 +13,7 @@ dependencies = [
 	"hydromt",
     "pyproj",
     "rasterio",
+	"rioxarray",
     "xarray",
     "boto3",
     "cht-utils",
