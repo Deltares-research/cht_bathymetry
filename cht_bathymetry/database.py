@@ -19,6 +19,7 @@ from cht_utils.misc_tools import interp2
 from .netcdf_tiles_v1 import BathymetryDatasetNetCDFTilesV1
 from .netcdf_tiles_v2 import BathymetryDatasetNetCDFTilesV2
 from .tiled_web_map import BathymetryDatasetTiledWebMap
+from .cog import BathymetryDatasetCOG
 
 class BathymetryDatabase:
     """
@@ -84,6 +85,7 @@ class BathymetryDatabase:
                 metadata = toml.load(fname)
                 dataset_format = metadata["format"]
             elif os.path.exists(os.path.join(path, "metadata.tml")):
+                # More likely to exist
                 metadata = toml.load(os.path.join(path, "metadata.tml"))
                 dataset_format = metadata["format"]
             else:
@@ -96,6 +98,8 @@ class BathymetryDatabase:
                 dataset = BathymetryDatasetNetCDFTilesV2(name, path)
             elif dataset_format == "tiled_web_map":
                 dataset = BathymetryDatasetTiledWebMap(name, path)
+            elif dataset_format == "cog":
+                dataset = BathymetryDatasetCOG(name, path)
 
             dataset.database = self    
             
@@ -158,31 +162,52 @@ class BathymetryDatabase:
                     print(e)
                     print(f"Failed to download {key}. Skipping dataset.")
                     continue
+
                 # Read metadata.tml
                 metadata = toml.load(filename)
-                if "available_tiles" in metadata:
-                    if metadata["available_tiles"]:
-                        # Download available_tiles.nc
-                        key = f"{self.s3_key}/{s3_name}/available_tiles.nc"
-                        filename = os.path.join(path, "available_tiles.nc")
-                        try:
-                            self.s3_client.download_file(Bucket=self.s3_bucket, # assign bucket name
-                                                        Key=key,               # key is the file name
-                                                        Filename=filename)
-                        except Exception as e:
-                            print(f"Failed to download {key}. Skipping dataset.")
-                            continue    
-                key = f"{self.s3_key}/{s3_name}/index.html"
-                filename = os.path.join(path, "index.html")
-                try:
-                    self.s3_client.download_file(Bucket=self.s3_bucket, # assign bucket name
-                                                Key=key,               # key is the file name
-                                                Filename=filename)
-                except Exception as e:
-                    print(f"index.html could not be downloaded")
+                format = metadata["format"]
+
+                if format == "tiled_web_map":
+
+                    if "available_tiles" in metadata:
+                        if metadata["available_tiles"]:
+                            # Download available_tiles.nc
+                            key = f"{self.s3_key}/{s3_name}/available_tiles.nc"
+                            filename = os.path.join(path, "available_tiles.nc")
+                            try:
+                                self.s3_client.download_file(Bucket=self.s3_bucket, # assign bucket name
+                                                            Key=key,               # key is the file name
+                                                            Filename=filename)
+                            except Exception as e:
+                                print(f"Failed to download {key}. Skipping dataset.")
+                                continue                        
+                    key = f"{self.s3_key}/{s3_name}/index.html"
+                    filename = os.path.join(path, "index.html")
+                    try:
+                        self.s3_client.download_file(Bucket=self.s3_bucket, # assign bucket name
+                                                    Key=key,               # key is the file name
+                                                    Filename=filename)
+                    except Exception as e:
+                        print(f"index.html could not be downloaded")
+
+                elif format == "cog":
+                    if "filename" in metadata:
+                        if metadata["filename"]:
+                            # Download available_tiles.nc
+                            key = f"{self.s3_key}/{s3_name}/{metadata["filename"]}"
+                            filename = os.path.join(path, metadata["filename"])
+                            try:
+                                self.s3_client.download_file(Bucket=self.s3_bucket, # assign bucket name
+                                                            Key=key,               # key is the file name
+                                                            Filename=filename)
+                            except Exception as e:
+                                print(f"Failed to download {key}. Skipping dataset.")
+                                continue                        
+
                 # Necessary data has been downloaded    
                 datasets_added = True
                 added_names.append(s3_name)
+
         # Write new local bathymetry.tml
         if datasets_added:
             d = {}

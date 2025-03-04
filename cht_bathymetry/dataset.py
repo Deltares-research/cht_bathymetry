@@ -28,6 +28,7 @@ class BathymetryDataset:
         self.vertical_units    = "m"
         self.vertical_reference_level_name = "MSL"
         self.vertical_reference_level_difference_with_MSL = 0.0
+        self.crs               = None
 
     def read_metadata(self):
         # Read metadata file
@@ -44,7 +45,8 @@ class BathymetryDataset:
         if self.long_name == "":
             self.long_name = self.name        
 
-        self.crs = CRS(self.coord_ref_sys_name)
+        if "coord_ref_sys_name" in tml:
+            self.crs = CRS(tml["coord_ref_sys_name"])
             
     def get_data(self):
         pass

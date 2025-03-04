@@ -4,6 +4,7 @@ Created on Sun Apr 25 10:58:08 2021
 
 @author: Maarten van Ormondt
 """
+from pyproj import CRS
 
 from cht_tiling import TiledWebMap
 
@@ -24,7 +25,8 @@ class BathymetryDatasetTiledWebMap(BathymetryDataset):
         self.path              = path
         self.local_path        = path
         self.read_metadata()
-        self.data = TiledWebMap(self.local_path, name, parameter="elevation")
+        self.data              = TiledWebMap(self.local_path, name, parameter="elevation")
+        self.crs               = CRS(3857)
             
     def get_data(self, xl, yl, max_cell_size, waitbox=None):
         """
