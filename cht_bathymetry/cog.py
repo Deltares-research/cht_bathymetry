@@ -4,6 +4,7 @@ Created on Sun Apr 25 10:58:08 2021
 
 @author: Maarten van Ormondt
 """
+import os
 import xarray as xr
 from pathlib import Path
 import rasterio
@@ -30,14 +31,22 @@ class BathymetryDatasetCOG(BathymetryDataset):
         self.read_metadata()
         self.data              = xr.Dataset()
         self.path              = Path(self.local_path) / self.filename
-        if self.crs is None:
-            with rasterio.open(self.path) as dataset:
-                self.crs = dataset.crs
+        # if self.crs is None:
+        #     if self.path.exists():
+        #         with rasterio.open(self.path) as dataset:
+        #             self.crs = dataset.crs
+        #     else:
+        #         print("Warning: CRS not defined for dataset {self.name} as the file does not exist (yet).")   
             
     def get_data(self, xl, yl, max_cell_size=1000.0, waitbox=None):
         """
         Reads data from database. Returns xarray dataset in same coordinate system (3857) as dataset. Resolution is determined by max_cell_size.
         """
+
+        if not self.path.exists():
+            if hasattr(self, "s3_key") and hasattr(self, "s3_bucket"):
+                # Download first !
+                self.download()
 
         # First find appropriate overview level based on max pixel size
         with rasterio.open(self.path) as src:
@@ -60,6 +69,25 @@ class BathymetryDatasetCOG(BathymetryDataset):
         rds.close()
 
         return x, y, z
+
+    def download(self):
+
+        # Download the COG file
+        print(f"Downloading {self.filename} from S3")
+        print("This may take a while...")
+
+        key = f"{self.s3_key}/{self.filename}"
+        filename = os.path.join(self.local_path, self.filename)
+        try:
+            self.database.s3_client.download_file(Bucket=self.s3_bucket, # assign bucket name
+                                                  Key=key,               # key is the file name
+                                                  Filename=filename)
+
+            print("Downloading done.")
+
+        except Exception as e:
+            print(f"Failed to download {key}. Skipping dataset.")
+
 
 def get_appropriate_overview_level(src, max_pixel_size):
     """
