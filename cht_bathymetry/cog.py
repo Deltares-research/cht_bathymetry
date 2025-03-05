@@ -8,6 +8,7 @@ import os
 import xarray as xr
 from pathlib import Path
 import rasterio
+import numpy as np
 # from rasterio.enums import Resampling
 # from rasterio.windows import from_bounds
 import rioxarray
@@ -65,6 +66,7 @@ class BathymetryDatasetCOG(BathymetryDataset):
         x = data.x.values[:]
         y = data.y.values[:]
         z = data.values[0,:,:]
+        z[z == rds.rio.nodata] = np.nan
 
         rds.close()
 
