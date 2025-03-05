@@ -10,17 +10,17 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-	"hydromt",
+#    "hydromt",
     "pyproj",
     "rasterio",
-	"rioxarray",
+    "rioxarray",
     "xarray",
     "boto3",
     "cht-utils",
     "numpy",
     "pyyaml",
     "toml",
-	"shapely",
+    "shapely",
     "geopandas",
     "netCDF4",
 ]
