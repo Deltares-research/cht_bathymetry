@@ -72,13 +72,21 @@ class BathymetryDatasetCOG(BathymetryDataset):
                 # Download first !
                 self.download()
 
-        # First find appropriate overview level based on max pixel size
+        # First find appropriate overview level based on max pixel size        
         with rasterio.open(self.path) as src:
-            overview_level = get_appropriate_overview_level(src, max_cell_size)
+            overview_level, ok = get_appropriate_overview_level(src, max_cell_size)
 
-        rds = rioxarray.open_rasterio(
-            self.path, masked=False, overview_level=overview_level
-        )
+        if ok: 
+            rds = rioxarray.open_rasterio(
+                self.path, masked=False, overview_level=overview_level
+            )
+        else:
+            rds = rioxarray.open_rasterio(self.path, masked=False)
+
+        # Check if bounding box covers the bounds of the dataset
+        if xl[1] < rds.rio.bounds()[0] or xl[0] > rds.rio.bounds()[2] or yl[1] < rds.rio.bounds()[1] or yl[0] > rds.rio.bounds()[3]:
+            # print("Bounding box is outside the dataset bounds.")
+            return np.nan, np.nan, np.nan
 
         data = rds.rio.clip_box(
             minx=xl[0],
@@ -146,7 +154,7 @@ def get_appropriate_overview_level(
 
     # If there are no overviews, return 0 (native resolution)
     if not overview_levels:
-        return 0
+        return 0, False
 
     # Calculate the resolution for each overview by multiplying the original resolution by the overview factor
     resolutions = [
@@ -162,4 +170,4 @@ def get_appropriate_overview_level(
         else:
             break
 
-    return selected_overview
+    return selected_overview, True
