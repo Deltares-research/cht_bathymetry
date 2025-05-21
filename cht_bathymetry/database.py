@@ -13,6 +13,7 @@ from pyproj import Transformer
 import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
+import rioxarray
 
 from cht_utils.misc_tools import interp2
 
@@ -20,6 +21,7 @@ from .netcdf_tiles_v1 import BathymetryDatasetNetCDFTilesV1
 from .netcdf_tiles_v2 import BathymetryDatasetNetCDFTilesV2
 from .tiled_web_map import BathymetryDatasetTiledWebMap
 from .cog import BathymetryDatasetCOG
+from .dataarray import BathymetryDatasetDataArray
 
 class BathymetryDatabase:
     """
@@ -125,6 +127,26 @@ class BathymetryDatabase:
                 d = dataset
                 return
         self.dataset.append(dataset)
+
+    def add_dataarray_dataset(self, da, name):
+        """
+        Add a xr.DataArray dataset to the database.
+        """
+        dataset = BathymetryDatasetDataArray(da, name)
+        # Get the CRS from the DataArray
+        dataset.crs = da.rio.crs
+        self.dataset.append(dataset)
+
+    def add_datasets_from_files(self, flist):    
+
+        for f in flist:
+            print(f)
+            # Add dataset to database
+            # Read geotiff as xarray DataArray
+            da = rioxarray.open_rasterio(f)
+            self.add_dataarray_dataset(da, f)
+            # data_list.append({"name": f, "zmin": -99999.0, "zmax": 99999.0})
+
 
     def write(self):
         """
@@ -350,6 +372,14 @@ class BathymetryDatabase:
                 return dataset
         return None
 
+    def get_lon_lat_range(self, name):
+        dataset = self.get_dataset(name)
+        if dataset is None:
+            print("Dataset " + name + " not found in database.")
+            return None, None
+        lon_range, lat_range = dataset.get_lon_lat_range()
+        return lon_range, lat_range
+ 
     def dataset_names(self, source=None):
         short_name_list = []
         long_name_list = []

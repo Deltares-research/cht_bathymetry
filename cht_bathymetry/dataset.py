@@ -75,3 +75,10 @@ class BathymetryDataset:
         Placeholder method to get the bounding box of the dataset.
         """
         pass
+    
+    def get_lon_lat_range(self, **kwargs) -> None:
+        """
+        Placeholder method to get the longitude and latitude range of the dataset.
+        """
+        pass
+ 
