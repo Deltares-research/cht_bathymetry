@@ -7,6 +7,7 @@ Created on Sun Apr 25 10:58:08 2021
 
 import os
 import numpy as np
+from shapely.geometry import Point
 import yaml
 import toml
 from pyproj import Transformer
@@ -14,6 +15,8 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 import rioxarray
+import geopandas as gpd
+from matplotlib import path
 
 from cht_utils.misc_tools import interp2
 
@@ -127,6 +130,11 @@ class BathymetryDatabase:
                 d = dataset
                 return
         self.dataset.append(dataset)
+
+    def add_dataset_from_file(self, name, filename):
+        """ Add a dataset to the database from a geotiff file."""
+        da = rioxarray.open_rasterio(filename)
+        self.add_dataarray_dataset(da, name)
 
     def add_dataarray_dataset(self, da, name):
         """
@@ -360,7 +368,23 @@ class BathymetryDatabase:
                     zb[np.where(zb < zmin)] = np.nan
                     zb[np.where(zb > zmax)] = np.nan
                     #zz1 = interp2_bilinear(xb, yb, zb, xzb, yzb)
-                    zz1 = interp2(xb, yb, zb, xzb, yzb, method=method)
+                    zz1 = interp2(xb, yb, zb, xzb, yzb, method=method) # bathymetry from this dataset
+                    # Check if a polygon is given
+                    if "polygon_file" in bathymetry:
+                        # Read the polygon file
+                        bathymetry["polygon"] = gpd.read_file(bathymetry["polygon_file"]).to_crs(dataset.crs)
+                    if "polygon" in bathymetry:    
+                        # Mask out values outside the polygon
+                        if isinstance(bathymetry["polygon"], gpd.GeoDataFrame):
+                            # Loop through polygons in gdf
+                            inpols = np.full(xzb.shape, False)
+                            for ip, polygon in bathymetry["polygon"].iterrows():
+                                inpol = inpolygon(xzb, yzb, polygon["geometry"])
+                                inpols = np.logical_or(inpols, inpol)
+
+                            # inpol = [polygon.contains(Point(xy)) for xy in points]
+                            zz1[~inpols] = np.nan
+
                     isn = np.where(np.isnan(zz))
                     zz[isn] = zz1[isn]
 
@@ -433,3 +457,11 @@ def yaml2dict(file_name):
     file = open(file_name,"r")
     dct = yaml.load(file, Loader=yaml.FullLoader)
     return dct
+
+def inpolygon(xq, yq, p):
+    shape = xq.shape
+    xq = xq.reshape(-1)
+    yq = yq.reshape(-1)
+    q = [(xq[i], yq[i]) for i in range(xq.shape[0])]
+    p = path.Path([(crds[0], crds[1]) for i, crds in enumerate(p.exterior.coords)])
+    return p.contains_points(q).reshape(shape)
