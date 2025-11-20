@@ -154,13 +154,17 @@ def get_appropriate_overview_level(
 
     # If there are no overviews, return 0 (native resolution)
     if not overview_levels:
-        return 0, False
+        return None, False
 
     # Calculate the resolution for each overview by multiplying the original resolution by the overview factor
     resolutions = [
         (original_resolution[0] * factor, original_resolution[1] * factor)
         for factor in overview_levels
     ]
+
+    if resolutions[0][0] > max_pixel_size and resolutions[0][1] > max_pixel_size:
+        # Even the lowest overview is larger than max_pixel_size
+        return None, False
 
     # Find the highest overview level that is smaller than or equal to the max_pixel_size
     selected_overview = 0
