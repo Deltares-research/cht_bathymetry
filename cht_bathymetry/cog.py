@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-This module defines the BathymetryDatasetCOG class, which represents a cloud-optimized GeoTIFF (COG) dataset for bathymetry data. 
+This module defines the BathymetryDatasetCOG class, which represents a cloud-optimized GeoTIFF (COG) dataset for bathymetry data.
 It provides methods to initialize the dataset, read data from the dataset, and download the dataset from an S3 bucket.
 
 Classes:
@@ -15,11 +15,12 @@ Usage:
 """
 
 import os
-import xarray as xr
 from pathlib import Path
-import rasterio
+
 import numpy as np
+import rasterio
 import rioxarray
+import xarray as xr
 
 from .dataset import BathymetryDataset
 
@@ -54,7 +55,7 @@ class BathymetryDatasetCOG(BathymetryDataset):
         waitbox: None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Reads data from the database. Returns arrays x, y, z in the same coordinate system as the dataset. 
+        Reads data from the database. Returns arrays x, y, z in the same coordinate system as the dataset.
         Resolution is determined by max_cell_size.
 
         Parameters:
@@ -72,11 +73,11 @@ class BathymetryDatasetCOG(BathymetryDataset):
                 # Download first !
                 self.download()
 
-        # First find appropriate overview level based on max pixel size        
+        # First find appropriate overview level based on max pixel size
         with rasterio.open(self.path) as src:
             overview_level, ok = get_appropriate_overview_level(src, max_cell_size)
 
-        if ok: 
+        if ok:
             rds = rioxarray.open_rasterio(
                 self.path, masked=False, overview_level=overview_level
             )
@@ -84,7 +85,12 @@ class BathymetryDatasetCOG(BathymetryDataset):
             rds = rioxarray.open_rasterio(self.path, masked=False)
 
         # Check if bounding box covers the bounds of the dataset
-        if xl[1] < rds.rio.bounds()[0] or xl[0] > rds.rio.bounds()[2] or yl[1] < rds.rio.bounds()[1] or yl[0] > rds.rio.bounds()[3]:
+        if (
+            xl[1] < rds.rio.bounds()[0]
+            or xl[0] > rds.rio.bounds()[2]
+            or yl[1] < rds.rio.bounds()[1]
+            or yl[0] > rds.rio.bounds()[3]
+        ):
             # print("Bounding box is outside the dataset bounds.")
             return np.nan, np.nan, np.nan
 
@@ -121,7 +127,7 @@ class BathymetryDatasetCOG(BathymetryDataset):
 
             print("Downloading done.")
 
-        except Exception as e:
+        except Exception:
             print(f"Failed to download {key}. Skipping dataset.")
 
 

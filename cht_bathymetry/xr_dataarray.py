@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-This module defines the BathymetryDatasetCOG class, which represents a cloud-optimized GeoTIFF (COG) dataset for bathymetry data. 
+This module defines the BathymetryDatasetCOG class, which represents a cloud-optimized GeoTIFF (COG) dataset for bathymetry data.
 It provides methods to initialize the dataset, read data from the dataset, and download the dataset from an S3 bucket.
 
 Classes:
@@ -14,12 +14,8 @@ Usage:
     from .cog import BathymetryDatasetCOG
 """
 
-import os
-import xarray as xr
-from pathlib import Path
-import rasterio
 import numpy as np
-import rioxarray
+import xarray as xr
 
 from .dataset import BathymetryDataset
 
@@ -50,7 +46,7 @@ class BathymetryDatasetDataArray(BathymetryDataset):
         waitbox: None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Reads data from the database. Returns arrays x, y, z in the same coordinate system as the dataset. 
+        Reads data from the database. Returns arrays x, y, z in the same coordinate system as the dataset.
         Resolution is determined by max_cell_size.
 
         Parameters:
@@ -66,7 +62,12 @@ class BathymetryDatasetDataArray(BathymetryDataset):
         rds = self.data
 
         # Check if bounding box covers the bounds of the dataset
-        if xl[1] < rds.rio.bounds()[0] or xl[0] > rds.rio.bounds()[2] or yl[1] < rds.rio.bounds()[1] or yl[0] > rds.rio.bounds()[3]:
+        if (
+            xl[1] < rds.rio.bounds()[0]
+            or xl[0] > rds.rio.bounds()[2]
+            or yl[1] < rds.rio.bounds()[1]
+            or yl[0] > rds.rio.bounds()[3]
+        ):
             # print("Bounding box is outside the dataset bounds.")
             return np.nan, np.nan, np.nan
 
@@ -84,4 +85,3 @@ class BathymetryDatasetDataArray(BathymetryDataset):
         rds.close()
 
         return x, y, z
-

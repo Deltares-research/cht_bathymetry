@@ -11,9 +11,11 @@ Usage:
 """
 
 import os
+from typing import Any, List, Optional
+
 import toml
 from pyproj import CRS
-from typing import Any, List, Optional
+
 
 class BathymetryDataset:
     """
@@ -75,10 +77,9 @@ class BathymetryDataset:
         Placeholder method to get the bounding box of the dataset.
         """
         pass
-    
+
     def get_lon_lat_range(self, **kwargs) -> None:
         """
         Placeholder method to get the longitude and latitude range of the dataset.
         """
         pass
- 
