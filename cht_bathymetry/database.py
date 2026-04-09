@@ -18,7 +18,7 @@ import rioxarray
 import geopandas as gpd
 from matplotlib import path
 
-from cht_utils.misc_tools import interp2
+from cht_utils.interpolation import interp2
 
 from .netcdf_tiles_v1 import BathymetryDatasetNetCDFTilesV1
 from .netcdf_tiles_v2 import BathymetryDatasetNetCDFTilesV2
