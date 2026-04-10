@@ -1,17 +1,9 @@
-# -*- coding: utf-8 -*-
 """
-This module defines the BathymetryDatasetCOG class, which represents a cloud-optimized GeoTIFF (COG) dataset for bathymetry data.
-It provides methods to initialize the dataset, read data from the dataset, and download the dataset from an S3 bucket.
+Cloud-Optimized GeoTIFF (COG) bathymetry dataset.
 
-Classes:
-    BathymetryDatasetCOG: A class for handling cloud-optimized GeoTIFF bathymetry datasets.
-
-Functions:
-    get_appropriate_overview_level(src: rasterio.io.DatasetReader, max_pixel_size: float) -> int:
-        Determines the appropriate overview level for a rasterio dataset based on the maximum pixel size.
-
-Usage:
-    from .cog import BathymetryDatasetCOG
+Provides :class:`BathymetryDatasetCOG` for reading depth data from local or
+S3-hosted COG files, selecting an appropriate internal overview level based on
+the requested resolution.
 """
 
 import os
@@ -27,16 +19,23 @@ from .dataset import BathymetryDataset
 
 class BathymetryDatasetCOG(BathymetryDataset):
     """
-    Cloud-optimized GeoTiFF dataset class
+    Bathymetry dataset backed by a Cloud-Optimized GeoTIFF file.
+
+    The file may reside locally or be fetched on first use from an S3 bucket
+    when ``s3_bucket`` and ``s3_key`` metadata attributes are present.
     """
 
-    def __init__(self, name: str, path: str):
+    def __init__(self, name: str, path: str) -> None:
         """
-        Initialize the BathymetryDatasetCOG class.
+        Initialise a COG dataset.
 
-        Parameters:
-        name (str): The name of the dataset.
-        path (str): The path to the dataset.
+        Parameters
+        ----------
+        name : str
+            Short identifier for the dataset (also used as the filename stem
+            and for metadata lookup).
+        path : str
+            Directory that contains the COG file and its metadata TOML.
         """
         super().__init__()
 
@@ -55,17 +54,34 @@ class BathymetryDatasetCOG(BathymetryDataset):
         waitbox: None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Reads data from the database. Returns arrays x, y, z in the same coordinate system as the dataset.
-        Resolution is determined by max_cell_size.
+        Read depth values from the COG for a bounding box.
 
-        Parameters:
-        xl (list[float]): List of x coordinates (longitude).
-        yl (list[float]): List of y coordinates (latitude).
-        max_cell_size (float): Maximum cell size for the resolution. Default is 1000.0.
-        waitbox (None): Placeholder for a waitbox object. Default is None.
+        Selects the most detailed internal overview whose pixel size is still
+        no larger than *max_cell_size* (in metres).  Downloads the file from
+        S3 first if it is not yet available locally.
 
-        Returns:
-        tuple[np.ndarray, np.ndarray, np.ndarray]: Returns three numpy arrays representing x, y, and z coordinates.
+        Parameters
+        ----------
+        xl : list[float]
+            ``[x_min, x_max]`` bounds in the dataset's coordinate system.
+        yl : list[float]
+            ``[y_min, y_max]`` bounds in the dataset's coordinate system.
+        max_cell_size : float, optional
+            Maximum pixel size in metres used to choose the overview level.
+            Default is ``1000.0``.
+        waitbox : None, optional
+            Reserved for a progress-dialog object; currently unused.
+
+        Returns
+        -------
+        x : np.ndarray
+            1-D array of x coordinates of the returned grid.
+        y : np.ndarray
+            1-D array of y coordinates of the returned grid.
+        z : np.ndarray
+            2-D depth array (NaN where no data).  Returns scalar ``np.nan``
+            for all three values when the bounding box lies outside the
+            dataset extent.
         """
 
         if not self.path.exists():
@@ -91,7 +107,6 @@ class BathymetryDatasetCOG(BathymetryDataset):
             or yl[1] < rds.rio.bounds()[1]
             or yl[0] > rds.rio.bounds()[3]
         ):
-            # print("Bounding box is outside the dataset bounds.")
             return np.nan, np.nan, np.nan
 
         data = rds.rio.clip_box(
@@ -111,7 +126,11 @@ class BathymetryDatasetCOG(BathymetryDataset):
 
     def download(self) -> None:
         """
-        Download the COG file from S3.
+        Download the COG file from the configured S3 bucket.
+
+        Uses ``self.database.s3_client`` together with ``self.s3_bucket``,
+        ``self.s3_key``, and ``self.filename`` to construct the S3 object key
+        and target local path.
         """
         print(f"Downloading {self.filename} from S3")
         print("This may take a while...")
@@ -120,8 +139,8 @@ class BathymetryDatasetCOG(BathymetryDataset):
         filename = os.path.join(self.local_path, self.filename)
         try:
             self.database.s3_client.download_file(
-                Bucket=self.s3_bucket,  # assign bucket name
-                Key=key,  # key is the file name
+                Bucket=self.s3_bucket,
+                Key=key,
                 Filename=filename,
             )
 
@@ -133,18 +152,28 @@ class BathymetryDatasetCOG(BathymetryDataset):
 
 def get_appropriate_overview_level(
     src: rasterio.io.DatasetReader, max_pixel_size: float
-) -> int:
+) -> tuple[int | None, bool]:
     """
-    Given a rasterio dataset `src` and a desired `max_pixel_size`,
-    determine the appropriate overview level (zoom level) that fits
-    the maximum resolution allowed by `max_pixel_size`.
+    Choose the best internal overview level for a target pixel size.
 
-    Parameters:
-    src (rasterio.io.DatasetReader): The rasterio dataset reader object.
-    max_pixel_size (float): The maximum pixel size for the resolution.
+    Iterates over the overview pyramid of *src* and returns the index of the
+    highest-resolution overview whose pixel size is still no larger than
+    *max_pixel_size*.
 
-    Returns:
-    int: The appropriate overview level.
+    Parameters
+    ----------
+    src : rasterio.io.DatasetReader
+        An open rasterio dataset.
+    max_pixel_size : float
+        Maximum acceptable pixel size in metres.
+
+    Returns
+    -------
+    selected_overview : int or None
+        Zero-based overview index, or ``None`` when no suitable overview
+        exists.
+    ok : bool
+        ``True`` when a suitable overview was found, ``False`` otherwise.
     """
     # Get the original resolution (pixel size) in terms of x and y
     original_resolution = src.res  # Tuple of (x_resolution, y_resolution)

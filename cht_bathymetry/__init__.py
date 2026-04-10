@@ -1,8 +1,9 @@
-# -*- coding: utf-8 -*-
 """
-Created on Sun Apr 25 10:58:08 2021
+cht_bathymetry: Bathymetry database and dataset access library.
 
-@author: ormondt
+Provides :class:`BathymetryDatabase` for managing collections of bathymetry
+datasets in various formats (NetCDF tiles, COG, tiled web maps, xarray
+DataArrays) and interpolating depth values onto arbitrary grids or point sets.
 """
 
 from .database import BathymetryDatabase  # noqa: F401

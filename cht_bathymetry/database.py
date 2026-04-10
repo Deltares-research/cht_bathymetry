@@ -1,11 +1,16 @@
-# -*- coding: utf-8 -*-
 """
-Created on Sun Apr 25 10:58:08 2021
+Bathymetry database: top-level registry and interpolation engine.
 
-@author: Maarten van Ormondt
+Provides :class:`BathymetryDatabase`, which loads dataset metadata from a
+TOML catalogue file, optionally synchronises with an S3 bucket, and exposes
+methods for interpolating depth onto arbitrary grids or point sets.
+
+Helper utilities (:func:`dict2yaml`, :func:`yaml2dict`, :func:`inpolygon`)
+are included for YAML I/O and polygon masking.
 """
 
 import os
+from typing import Optional
 
 import boto3
 import geopandas as gpd
@@ -28,15 +33,36 @@ from .tiled_web_map import BathymetryDatasetTiledWebMap
 
 class BathymetryDatabase:
     """
-    The main Bathymetry Database class
+    Registry of bathymetry datasets with grid/point interpolation support.
 
-    :param pth: Path name where bathymetry tiles will be cached.
-    :type pth: string
+    Reads a ``bathymetry.tml`` catalogue from *path*, instantiates the
+    appropriate dataset class for each entry, and provides methods to
+    interpolate depth data onto user-supplied grids or point clouds.
+
+    Parameters
+    ----------
+    path : str or None, optional
+        Local directory that contains ``bathymetry.tml`` and subdirectories
+        for each dataset.
+    s3_bucket : str or None, optional
+        S3 bucket name used for remote dataset synchronisation.
+    s3_key : str or None, optional
+        S3 key prefix under which datasets are stored.
+    s3_region : str or None, optional
+        AWS region of the S3 bucket.
+    check_online : bool, optional
+        When ``True``, synchronise the local catalogue against the S3 bucket
+        on construction.  Default is ``False``.
     """
 
     def __init__(
-        self, path=None, s3_bucket=None, s3_key=None, s3_region=None, check_online=False
-    ):
+        self,
+        path: Optional[str] = None,
+        s3_bucket: Optional[str] = None,
+        s3_key: Optional[str] = None,
+        s3_region: Optional[str] = None,
+        check_online: bool = False,
+    ) -> None:
         self.dataset = []
         self.s3_client = None
         self.s3_bucket = s3_bucket
@@ -49,9 +75,13 @@ class BathymetryDatabase:
             self.check_online_database()
         self.initialized = True
 
-    def read(self):
+    def read(self) -> None:
         """
-        Reads meta-data of all datasets in the database.
+        Load metadata for all datasets listed in ``bathymetry.tml``.
+
+        Creates the local database directory when it does not exist yet.
+        Skips any dataset whose metadata file cannot be found and prints a
+        warning.
         """
 
         if self.path is None:
@@ -66,7 +96,7 @@ class BathymetryDatabase:
         tml_file = os.path.join(self.path, "bathymetry.tml")
 
         if not os.path.exists(tml_file):
-            print("Warning! Bathymetry database file not found: " + tml_file)
+            print(f"Warning! Bathymetry database file not found: {tml_file}")
             return
 
         datasets = toml.load(tml_file)
@@ -80,7 +110,7 @@ class BathymetryDatabase:
                 path = os.path.join(self.path, name)
 
             # Read the meta data for this dataset
-            fname = os.path.join(path, name + ".tml")
+            fname = os.path.join(path, f"{name}.tml")
 
             if os.path.exists(fname):
                 metadata = toml.load(fname)
@@ -91,9 +121,7 @@ class BathymetryDatabase:
                 dataset_format = metadata["format"]
             else:
                 print(
-                    "Could not find metadata file for dataset "
-                    + name
-                    + " ! Skipping dataset."
+                    f"Could not find metadata file for dataset {name} ! Skipping dataset."
                 )
                 continue
 
@@ -110,7 +138,16 @@ class BathymetryDatabase:
 
             self.dataset.append(dataset)
 
-    def load_dataset(self, name):
+    def load_dataset(self, name: str) -> None:
+        """
+        Load a single dataset by name and add (or replace) it in the registry.
+
+        Parameters
+        ----------
+        name : str
+            Dataset name; a subdirectory with this name is expected under
+            ``self.path``.
+        """
         path = os.path.join(self.path, name)
         metadata = toml.load(os.path.join(path, "metadata.tml"))
         dataset_format = metadata["format"]
@@ -131,41 +168,72 @@ class BathymetryDatabase:
                 return
         self.dataset.append(dataset)
 
-    def add_dataset_from_file(self, name, filename):
-        """Add a dataset to the database from a geotiff file."""
+    def add_dataset_from_file(self, name: str, filename: str) -> None:
+        """
+        Add a dataset to the database by opening a GeoTIFF file.
+
+        Parameters
+        ----------
+        name : str
+            Identifier to assign to the new dataset.
+        filename : str
+            Path to a GeoTIFF (or any rasterio-readable raster) file.
+        """
         da = rioxarray.open_rasterio(filename)
         self.add_dataarray_dataset(da, name)
 
-    def add_dataarray_dataset(self, da, name):
+    def add_dataarray_dataset(self, da, name: str) -> None:
         """
-        Add a xr.DataArray dataset to the database.
+        Wrap an :class:`xarray.DataArray` and register it as a dataset.
+
+        Parameters
+        ----------
+        da : xr.DataArray
+            Source DataArray with a ``rio`` CRS accessor.
+        name : str
+            Identifier for the dataset.
         """
         dataset = BathymetryDatasetDataArray(da, name)
         # Get the CRS from the DataArray
         dataset.crs = da.rio.crs
         self.dataset.append(dataset)
 
-    def add_datasets_from_files(self, flist):
+    def add_datasets_from_files(self, flist: list[str]) -> None:
+        """
+        Add multiple datasets from a list of GeoTIFF file paths.
 
+        Parameters
+        ----------
+        flist : list[str]
+            Paths to raster files.  Each file is opened with
+            :func:`rioxarray.open_rasterio` and registered under its file
+            path as the dataset name.
+        """
         for f in flist:
             print(f)
             # Add dataset to database
             # Read geotiff as xarray DataArray
             da = rioxarray.open_rasterio(f)
             self.add_dataarray_dataset(da, f)
-            # data_list.append({"name": f, "zmin": -99999.0, "zmax": 99999.0})
 
-    def write(self):
-        """ """
+    def write(self) -> None:
+        """
+        Persist the database catalogue to disk.
+
+        Currently a no-op placeholder.
+        """
         pass
-        # # Write in database
-        # tml_file = os.path.join(self.path, "bathymetry.tml")
-        # datasets = {"dataset": []}
-        # for dataset in self.dataset:
-        #     datasets["dataset"].append(dataset.get_metadata())
-        # dict2yaml(tml_file, datasets, sort_keys=False)
 
-    def check_online_database(self):
+    def check_online_database(self) -> None:
+        """
+        Synchronise the local catalogue with the S3 bucket.
+
+        Downloads ``bathymetry.tml`` from S3 and compares it with the local
+        catalogue.  For each dataset present in S3 but not locally, the
+        metadata (and, where applicable, supporting files such as
+        ``available_tiles.nc`` or ``index.html``) are downloaded and the
+        local catalogue is updated.
+        """
         if self.s3_client is None:
             self.s3_client = boto3.client(
                 "s3", config=Config(signature_version=UNSIGNED)
@@ -178,12 +246,11 @@ class BathymetryDatabase:
         print("Updating bathymetry database ...")
         try:
             self.s3_client.download_file(
-                Bucket=self.s3_bucket,  # assign bucket name
-                Key=key,  # key is the file name
+                Bucket=self.s3_bucket,
+                Key=key,
                 Filename=filename,
-            )  # storage file path
-        except:
-            # Download failed
+            )
+        except Exception:
             print(
                 f"Failed to download {key} from {self.s3_bucket}. Database will not be updated."
             )
@@ -216,10 +283,10 @@ class BathymetryDatabase:
                 # Download metadata
                 try:
                     self.s3_client.download_file(
-                        Bucket=self.s3_bucket,  # assign bucket name
-                        Key=key,  # key is the file name
+                        Bucket=self.s3_bucket,
+                        Key=key,
                         Filename=filename,
-                    )  # storage file path
+                    )
                 except Exception as e:
                     print(e)
                     print(f"Failed to download {key}. Skipping dataset.")
@@ -243,8 +310,8 @@ class BathymetryDatabase:
                             filename = os.path.join(path, "available_tiles.nc")
                             try:
                                 self.s3_client.download_file(
-                                    Bucket=self.s3_bucket,  # assign bucket name
-                                    Key=key,  # key is the file name
+                                    Bucket=self.s3_bucket,
+                                    Key=key,
                                     Filename=filename,
                                 )
                             except Exception:
@@ -254,8 +321,8 @@ class BathymetryDatabase:
                     filename = os.path.join(path, "index.html")
                     try:
                         self.s3_client.download_file(
-                            Bucket=self.s3_bucket,  # assign bucket name
-                            Key=key,  # key is the file name
+                            Bucket=self.s3_bucket,
+                            Key=key,
                             Filename=filename,
                         )
                     except Exception:
@@ -265,19 +332,6 @@ class BathymetryDatabase:
                     # Do not download now, but wait until the data is needed
                     # We'll do it in the COG class
                     pass
-
-                    # if "filename" in metadata:
-                    #     if metadata["filename"]:
-                    #         # Download available_tiles.nc
-                    #         key = f"{self.s3_key}/{dataset_name}/{metadata["filename"]}"
-                    #         filename = os.path.join(path, metadata["filename"])
-                    #         try:
-                    #             self.s3_client.download_file(Bucket=self.s3_bucket, # assign bucket name
-                    #                                         Key=key,               # key is the file name
-                    #                                         Filename=filename)
-                    #         except Exception as e:
-                    #             print(f"Failed to download {key}. Skipping dataset.")
-                    #             continue
 
                 # Necessary data has been downloaded
                 datasets_added = True
@@ -301,8 +355,39 @@ class BathymetryDatabase:
             print("No new datasets were added to the local database.")
 
     def get_bathymetry_on_points(
-        self, xz, yz, dxmin, crs, bathymetry_list, method="linear"
-    ):
+        self,
+        xz: np.ndarray,
+        yz: np.ndarray,
+        dxmin: float,
+        crs,
+        bathymetry_list: list,
+        method: str = "linear",
+    ) -> np.ndarray:
+        """
+        Interpolate bathymetry onto a cloud of points.
+
+        Parameters
+        ----------
+        xz : np.ndarray
+            1-D array of x coordinates of the target points.
+        yz : np.ndarray
+            1-D array of y coordinates of the target points.
+        dxmin : float
+            Minimum spacing between points, used as the resolution hint.
+        crs : pyproj.CRS
+            CRS of the target coordinates.
+        bathymetry_list : list[dict]
+            Ordered list of dataset descriptors (each a dict with at least
+            ``"name"`` and optionally ``"zmin"``, ``"zmax"``, ``"polygon"``).
+        method : str, optional
+            Interpolation method passed to :func:`cht_utils.interpolation.interp2`.
+            Default is ``"linear"``.
+
+        Returns
+        -------
+        zz : np.ndarray
+            1-D depth array aligned with *xz*/*yz* (NaN where no data).
+        """
         zz = self.get_bathymetry_on_grid(
             xz, yz, crs, bathymetry_list, method=method, coords="points", dxmin=dxmin
         )
@@ -310,16 +395,54 @@ class BathymetryDatabase:
 
     def get_bathymetry_on_grid(
         self,
-        xz,
-        yz,
+        xz: np.ndarray,
+        yz: np.ndarray,
         crs,
-        bathymetry_list,
-        method="linear",
-        coords="grid",
-        dxmin=1.0e6,
+        bathymetry_list: list,
+        method: str = "linear",
+        coords: str = "grid",
+        dxmin: float = 1.0e6,
         waitbox=None,
-        buffer=0.2,
-    ):
+        buffer: float = 0.2,
+    ) -> np.ndarray:
+        """
+        Interpolate bathymetry onto a regular grid or arbitrary point set.
+
+        Iterates through *bathymetry_list* in order, filling NaN cells from
+        each successive dataset.  Applies optional depth clipping
+        (``zmin``/``zmax``) and polygon masking per dataset entry.
+
+        Parameters
+        ----------
+        xz : np.ndarray
+            X coordinates of the target grid or points.  For a 1-D regular
+            grid with ``coords="grid"`` this is the x-axis vector; for a 2-D
+            curvilinear grid or point set it is a full coordinate array.
+        yz : np.ndarray
+            Y coordinates (same shape convention as *xz*).
+        crs : pyproj.CRS
+            CRS of the target coordinates.
+        bathymetry_list : list[dict]
+            Ordered list of dataset descriptors.
+        method : str, optional
+            Interpolation method.  Default is ``"linear"``.
+        coords : str, optional
+            ``"grid"`` (default) or ``"points"``.
+        dxmin : float, optional
+            Resolution hint used when ``coords="points"``.  Default is
+            ``1.0e6``.
+        waitbox : optional
+            Reserved for a progress-dialog object; currently unused.
+        buffer : float, optional
+            Fractional buffer added around the bounding box when fetching
+            source data.  Default is ``0.2``.
+
+        Returns
+        -------
+        zz : np.ndarray
+            Depth array matching the shape of the target grid/points (NaN
+            where no data from any dataset).
+        """
 
         if xz.ndim == 2:
             # xy and yz are a grid
@@ -381,7 +504,6 @@ class BathymetryDatabase:
                 if not np.isnan(zb).all():
                     zb[np.where(zb < zmin)] = np.nan
                     zb[np.where(zb > zmax)] = np.nan
-                    # zz1 = interp2_bilinear(xb, yb, zb, xzb, yzb)
                     zz1 = interp2(
                         xb, yb, zb, xzb, yzb, method=method
                     )  # bathymetry from this dataset
@@ -400,7 +522,6 @@ class BathymetryDatabase:
                                 inpol = inpolygon(xzb, yzb, polygon["geometry"])
                                 inpols = np.logical_or(inpols, inpol)
 
-                            # inpol = [polygon.contains(Point(xy)) for xy in points]
                             zz1[~inpols] = np.nan
 
                     isn = np.where(np.isnan(zz))
@@ -408,21 +529,67 @@ class BathymetryDatabase:
 
         return zz
 
-    def get_dataset(self, name):
+    def get_dataset(self, name: str):
+        """
+        Retrieve a dataset by name.
+
+        Parameters
+        ----------
+        name : str
+            Dataset identifier.
+
+        Returns
+        -------
+        dataset : BathymetryDataset or None
+            The matching dataset, or ``None`` if not found.
+        """
         for dataset in self.dataset:
             if dataset.name == name:
                 return dataset
         return None
 
-    def get_lon_lat_range(self, name):
+    def get_lon_lat_range(self, name: str) -> tuple[list[float] | None, list[float] | None]:
+        """
+        Return the geographic lon/lat range for a named dataset.
+
+        Parameters
+        ----------
+        name : str
+            Dataset identifier.
+
+        Returns
+        -------
+        lon_range : list[float] or None
+        lat_range : list[float] or None
+        """
         dataset = self.get_dataset(name)
         if dataset is None:
-            print("Dataset " + name + " not found in database.")
+            print(f"Dataset {name} not found in database.")
             return None, None
         lon_range, lat_range = dataset.get_lon_lat_range()
         return lon_range, lat_range
 
-    def dataset_names(self, source=None):
+    def dataset_names(
+        self, source: Optional[str] = None
+    ) -> tuple[list[str], list[str], list[str]]:
+        """
+        Return lists of dataset names, optionally filtered by source.
+
+        Parameters
+        ----------
+        source : str or None, optional
+            When given, only datasets whose ``source`` attribute matches are
+            included.
+
+        Returns
+        -------
+        short_name_list : list[str]
+            Short (identifier) names.
+        long_name_list : list[str]
+            Human-readable long names.
+        source_name_list : list[str]
+            Source labels.
+        """
         short_name_list = []
         long_name_list = []
         source_name_list = []
@@ -439,7 +606,18 @@ class BathymetryDatabase:
                 source_name_list.append(dataset.source)
         return short_name_list, long_name_list, source_name_list
 
-    def sources(self):
+    def sources(self) -> tuple[list[str], list]:
+        """
+        Return all unique sources and their associated datasets.
+
+        Returns
+        -------
+        source_names : list[str]
+            Unique source labels.
+        sources : list[BathymetrySource]
+            Corresponding :class:`BathymetrySource` objects, each holding the
+            datasets that belong to that source.
+        """
 
         sources = []
         source_names = []
@@ -462,25 +640,76 @@ class BathymetryDatabase:
 
 
 class BathymetrySource:
-    def __init__(self, name):
+    """
+    Simple container grouping datasets under a common source label.
+
+    Parameters
+    ----------
+    name : str
+        Source identifier (e.g. ``"GEBCO"``, ``"USGS"``).
+    """
+
+    def __init__(self, name: str) -> None:
         self.name = name
         self.dataset = []
 
 
-def dict2yaml(file_name, dct, sort_keys=False):
+def dict2yaml(file_name: str, dct: dict, sort_keys: bool = False) -> None:
+    """
+    Serialise a dictionary to a YAML file.
+
+    Parameters
+    ----------
+    file_name : str
+        Destination file path.
+    dct : dict
+        Data to serialise.
+    sort_keys : bool, optional
+        Whether to sort dictionary keys in the output.  Default is ``False``.
+    """
     yaml_string = yaml.dump(dct, sort_keys=sort_keys)
-    file = open(file_name, "w")
-    file.write(yaml_string)
-    file.close()
+    with open(file_name, "w") as file:
+        file.write(yaml_string)
 
 
-def yaml2dict(file_name):
-    file = open(file_name, "r")
-    dct = yaml.load(file, Loader=yaml.FullLoader)
+def yaml2dict(file_name: str) -> dict:
+    """
+    Load a YAML file into a dictionary.
+
+    Parameters
+    ----------
+    file_name : str
+        Path to the YAML file.
+
+    Returns
+    -------
+    dict
+        Parsed contents of the YAML file.
+    """
+    with open(file_name, "r") as file:
+        dct = yaml.load(file, Loader=yaml.FullLoader)
     return dct
 
 
-def inpolygon(xq, yq, p):
+def inpolygon(xq: np.ndarray, yq: np.ndarray, p) -> np.ndarray:
+    """
+    Test which query points fall inside a Shapely polygon.
+
+    Parameters
+    ----------
+    xq : np.ndarray
+        X coordinates of the query points (any shape).
+    yq : np.ndarray
+        Y coordinates of the query points (same shape as *xq*).
+    p : shapely.geometry.Polygon
+        Polygon to test against.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean array with the same shape as *xq*; ``True`` where the
+        corresponding point lies inside *p*.
+    """
     shape = xq.shape
     xq = xq.reshape(-1)
     yq = yq.reshape(-1)

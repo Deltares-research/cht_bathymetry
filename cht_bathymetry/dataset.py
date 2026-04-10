@@ -1,13 +1,9 @@
-# -*- coding: utf-8 -*-
 """
-This module defines the BathymetryDataset class, which represents a bathymetry dataset.
-It provides methods to read metadata and get data from the dataset.
+Base class for all bathymetry dataset types.
 
-Classes:
-    BathymetryDataset: A class for handling bathymetry datasets.
-
-Usage:
-    from .dataset import BathymetryDataset
+Defines the :class:`BathymetryDataset` interface that concrete dataset
+implementations (NetCDF tiles, COG, tiled web map, DataArray) inherit from.
+Handles metadata loading from TOML files and CRS resolution.
 """
 
 import os
@@ -19,12 +15,15 @@ from pyproj import CRS
 
 class BathymetryDataset:
     """
-    Bathymetry dataset class
+    Abstract base class for a bathymetry dataset.
+
+    Subclasses must implement :meth:`get_data`, :meth:`get_bbox`, and
+    :meth:`get_lon_lat_range`.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
-        Initialize the BathymetryDataset class.
+        Initialise default attributes shared by all dataset types.
         """
         self.database: Any = None
         self.name: str = ""
@@ -45,10 +44,17 @@ class BathymetryDataset:
 
     def read_metadata(self) -> None:
         """
-        Read metadata file and set attributes.
+        Read a TOML metadata file and populate instance attributes.
 
-        Raises:
-        FileNotFoundError: If the metadata file does not exist.
+        Looks first for ``<local_path>/<name>.tml``, then falls back to
+        ``<local_path>/metadata.tml``.  Every key in the TOML file is set as
+        an attribute via :func:`setattr`.  The ``longname`` key is accepted as
+        an alias for ``long_name`` for backwards compatibility.
+
+        Raises
+        ------
+        FileNotFoundError
+            If neither metadata file exists at ``local_path``.
         """
         tml_file = os.path.join(self.local_path, self.name + ".tml")
         if not os.path.exists(tml_file):
@@ -68,18 +74,24 @@ class BathymetryDataset:
 
     def get_data(self) -> None:
         """
-        Placeholder method to get data from the dataset.
+        Return depth data for a bounding box.
+
+        Placeholder — subclasses must override this method.
         """
         pass
 
     def get_bbox(self, **kwargs) -> None:
         """
-        Placeholder method to get the bounding box of the dataset.
+        Return the spatial bounding box of the dataset.
+
+        Placeholder — subclasses must override this method.
         """
         pass
 
     def get_lon_lat_range(self, **kwargs) -> None:
         """
-        Placeholder method to get the longitude and latitude range of the dataset.
+        Return the longitude and latitude range of the dataset.
+
+        Placeholder — subclasses must override this method.
         """
         pass

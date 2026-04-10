@@ -1,17 +1,12 @@
-# -*- coding: utf-8 -*-
 """
-This module defines the BathymetryDatasetCOG class, which represents a cloud-optimized GeoTIFF (COG) dataset for bathymetry data.
-It provides methods to initialize the dataset, read data from the dataset, and download the dataset from an S3 bucket.
+xarray DataArray bathymetry dataset (alternate constructor).
 
-Classes:
-    BathymetryDatasetCOG: A class for handling cloud-optimized GeoTIFF bathymetry datasets.
+Provides a variant of the DataArray-backed bathymetry dataset that accepts a
+``(name, path)`` constructor signature matching the other dataset types,
+storing the DataArray separately via ``self.data``.
 
-Functions:
-    get_appropriate_overview_level(src: rasterio.io.DatasetReader, max_pixel_size: float) -> int:
-        Determines the appropriate overview level for a rasterio dataset based on the maximum pixel size.
-
-Usage:
-    from .cog import BathymetryDatasetCOG
+Note: for the primary DataArray-based dataset (constructed directly from an
+:class:`xarray.DataArray` object) see :mod:`cht_bathymetry.dataarray`.
 """
 
 import numpy as np
@@ -22,16 +17,24 @@ from .dataset import BathymetryDataset
 
 class BathymetryDatasetDataArray(BathymetryDataset):
     """
-    XR DataArray dataset class
+    Bathymetry dataset backed by an :class:`xarray.DataArray`.
+
+    Constructed from a ``(name, path)`` pair for interface consistency with
+    tile-based dataset types.  The actual DataArray must be assigned to
+    ``self.data`` after construction.
     """
 
-    def __init__(self, name: str, path: str):
+    def __init__(self, name: str, path: str) -> None:
         """
-        Initialize the BathymetryDatasetCOG class.
+        Initialise the dataset with a name and placeholder path.
 
-        Parameters:
-        name (str): The name of the dataset.
-        path (str): The path to the dataset (dummy value).
+        Parameters
+        ----------
+        name : str
+            Short dataset identifier.
+        path : str
+            Path string (accepted for interface consistency; not used to load
+            data directly in this class).
         """
         super().__init__()
 
@@ -46,17 +49,30 @@ class BathymetryDatasetDataArray(BathymetryDataset):
         waitbox: None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Reads data from the database. Returns arrays x, y, z in the same coordinate system as the dataset.
-        Resolution is determined by max_cell_size.
+        Return depth values clipped to a bounding box.
 
-        Parameters:
-        xl (list[float]): List of x coordinates (longitude).
-        yl (list[float]): List of y coordinates (latitude).
-        max_cell_size (float): Maximum cell size for the resolution. Default is 1000.0.
-        waitbox (None): Placeholder for a waitbox object. Default is None.
+        Parameters
+        ----------
+        xl : list[float]
+            ``[x_min, x_max]`` bounds in the dataset's coordinate system.
+        yl : list[float]
+            ``[y_min, y_max]`` bounds in the dataset's coordinate system.
+        max_cell_size : float, optional
+            Maximum cell size in metres (unused — resolution is fixed by the
+            DataArray).  Default is ``1000.0``.
+        waitbox : None, optional
+            Reserved for a progress-dialog object; currently unused.
 
-        Returns:
-        tuple[np.ndarray, np.ndarray, np.ndarray]: Returns three numpy arrays representing x, y, and z coordinates.
+        Returns
+        -------
+        x : np.ndarray
+            1-D array of x coordinates.
+        y : np.ndarray
+            1-D array of y coordinates.
+        z : np.ndarray
+            2-D depth array (NaN where no data).  Returns scalar ``np.nan``
+            for all three values when the bounding box lies outside the
+            dataset extent.
         """
 
         rds = self.data
@@ -68,7 +84,6 @@ class BathymetryDatasetDataArray(BathymetryDataset):
             or yl[1] < rds.rio.bounds()[1]
             or yl[0] > rds.rio.bounds()[3]
         ):
-            # print("Bounding box is outside the dataset bounds.")
             return np.nan, np.nan, np.nan
 
         data = rds.rio.clip_box(

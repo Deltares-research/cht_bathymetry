@@ -1,17 +1,9 @@
-# -*- coding: utf-8 -*-
 """
-This module defines the BathymetryDatasetCOG class, which represents a cloud-optimized GeoTIFF (COG) dataset for bathymetry data.
-It provides methods to initialize the dataset, read data from the dataset, and download the dataset from an S3 bucket.
+xarray DataArray bathymetry dataset.
 
-Classes:
-    BathymetryDatasetCOG: A class for handling cloud-optimized GeoTIFF bathymetry datasets.
-
-Functions:
-    get_appropriate_overview_level(src: rasterio.io.DatasetReader, max_pixel_size: float) -> int:
-        Determines the appropriate overview level for a rasterio dataset based on the maximum pixel size.
-
-Usage:
-    from .cog import BathymetryDatasetCOG
+Provides :class:`BathymetryDatasetDataArray` for wrapping an in-memory
+:class:`xarray.DataArray` (e.g. loaded from a GeoTIFF) as a bathymetry
+dataset that can be queried through the standard database interface.
 """
 
 import numpy as np
@@ -22,16 +14,23 @@ from .dataset import BathymetryDataset
 
 class BathymetryDatasetDataArray(BathymetryDataset):
     """
-    XR DataArray dataset class
+    Bathymetry dataset backed by an :class:`xarray.DataArray`.
+
+    Intended for datasets that are already loaded into memory (e.g. opened
+    with :func:`rioxarray.open_rasterio`) rather than read tile-by-tile from
+    disk.
     """
 
-    def __init__(self, da: xr.DataArray, name: str):
+    def __init__(self, da: xr.DataArray, name: str) -> None:
         """
-        Initialize the BathymetryDatasetDataArray class.
+        Initialise a DataArray dataset.
 
-        Parameters:
-        da (xr.DataArray): The xr.DataArray.
-        name (str): The name of the dataset.
+        Parameters
+        ----------
+        da : xr.DataArray
+            Source DataArray with spatial coordinates and a ``rio`` accessor.
+        name : str
+            Short identifier for the dataset.
         """
         super().__init__()
 
@@ -46,17 +45,30 @@ class BathymetryDatasetDataArray(BathymetryDataset):
         waitbox: None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Reads data from the database. Returns arrays x, y, z in the same coordinate system as the dataset.
-        Resolution is determined by max_cell_size.
+        Return depth values clipped to a bounding box.
 
-        Parameters:
-        xl (list[float]): List of x coordinates (longitude).
-        yl (list[float]): List of y coordinates (latitude).
-        max_cell_size (float): Maximum cell size for the resolution. Default is 1000.0.
-        waitbox (None): Placeholder for a waitbox object. Default is None.
+        Parameters
+        ----------
+        xl : list[float]
+            ``[x_min, x_max]`` bounds in the dataset's coordinate system.
+        yl : list[float]
+            ``[y_min, y_max]`` bounds in the dataset's coordinate system.
+        max_cell_size : float, optional
+            Maximum cell size in metres (unused here — resolution is fixed by
+            the DataArray).  Default is ``1000.0``.
+        waitbox : None, optional
+            Reserved for a progress-dialog object; currently unused.
 
-        Returns:
-        tuple[np.ndarray, np.ndarray, np.ndarray]: Returns three numpy arrays representing x, y, and z coordinates.
+        Returns
+        -------
+        x : np.ndarray
+            1-D array of x coordinates.
+        y : np.ndarray
+            1-D array of y coordinates.
+        z : np.ndarray
+            2-D depth array (NaN where no data).  Returns scalar ``np.nan``
+            for all three values when the bounding box lies outside the
+            dataset extent.
         """
 
         rds = self.data
@@ -68,7 +80,6 @@ class BathymetryDatasetDataArray(BathymetryDataset):
             or yl[1] < rds.rio.bounds()[1]
             or yl[0] > rds.rio.bounds()[3]
         ):
-            # print("Bounding box is outside the dataset bounds.")
             return np.nan, np.nan, np.nan
 
         data = rds.rio.clip_box(
@@ -89,10 +100,12 @@ class BathymetryDatasetDataArray(BathymetryDataset):
 
     def get_bbox(self) -> list[float]:
         """
-        Get the bounding box of the dataset.
+        Return the bounding box of the dataset.
 
-        Returns:
-        list[float]: A list containing the bounding box coordinates [minx, miny, maxx, maxy].
+        Returns
+        -------
+        list[float]
+            ``[minx, miny, maxx, maxy]`` in the dataset's native CRS.
         """
         return [
             self.data.rio.bounds()[0],
@@ -101,8 +114,22 @@ class BathymetryDatasetDataArray(BathymetryDataset):
             self.data.rio.bounds()[3],
         ]
 
-    def get_lon_lat_range(self, **kwargs) -> None:
-        """ """
+    def get_lon_lat_range(self, **kwargs) -> tuple[list[float] | None, list[float] | None]:
+        """
+        Return the longitude and latitude range of the dataset.
+
+        Reprojects the bounding box to geographic coordinates when the
+        dataset's CRS is projected.
+
+        Returns
+        -------
+        lon_range : list[float] or None
+            ``[lon_min, lon_max]``, or ``None`` when the bounding box cannot
+            be determined.
+        lat_range : list[float] or None
+            ``[lat_min, lat_max]``, or ``None`` when the bounding box cannot
+            be determined.
+        """
         # Get bbox in WGS 84
         # Convert bounds to lon/lat
         bbox = self.get_bbox(**kwargs)

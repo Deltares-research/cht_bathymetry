@@ -1,45 +1,57 @@
-# -*- coding: utf-8 -*-
 """
-Created on Sun Apr 25 10:58:08 2021
+NetCDF tile dataset — version 2 format.
 
-@author: Maarten van Ormondt
+Provides :class:`BathymetryDatasetNetCDFTilesV2` for reading tiled bathymetry
+data stored in the v2 NetCDF tile format.  The v2 format uses a 2-D
+availability matrix (``available_zl<nn>``) rather than separate index vectors,
+and tiles are organised into per-column subdirectories.
 """
 
 import os
-
-# import math
 import urllib
 from shutil import copyfile
+from typing import Optional
 
 import netCDF4 as nc
-
-# import xml.etree.ElementTree as ET
 import numpy as np
 import yaml
 
-# from pyproj import CRS
-# from pyproj import Transformer
-# from cht_utils.misc_tools import interp2
 from .dataset import BathymetryDataset
 
 
 class ZoomLevel:
-    def __init__(self):
-        self.dx = 0.0
-        self.dy = 0.0
-        self.i_available = []
-        self.j_available = []
+    """
+    Container for the grid parameters of a single zoom level.
+    """
+
+    def __init__(self) -> None:
+        self.dx: float = 0.0
+        self.dy: float = 0.0
+        self.i_available: list = []
+        self.j_available: list = []
 
 
 class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
     """
-    Bathymetry dataset class
+    Bathymetry dataset in NetCDF tiles v2 format.
 
-    :ivar name: initial value: ''
-    :ivar nr_zoom_levels: initial value: 0
+    Tiles are organised in zoom-level subdirectories (``zl01``, ``zl02``, …)
+    with an additional column-level subdirectory per tile.  A companion
+    ``.nc`` file stores the zoom-level parameters and a 2-D availability
+    matrix for each level.
     """
 
-    def __init__(self, name, path):
+    def __init__(self, name: str, path: str) -> None:
+        """
+        Initialise a v2 NetCDF tiles dataset.
+
+        Parameters
+        ----------
+        name : str
+            Short dataset identifier.
+        path : str
+            Local directory containing the dataset files.
+        """
         super().__init__()
 
         self.name = name
@@ -49,9 +61,12 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
         self.read_metadata()
         self.read_tile_structure()
 
-    def read_tile_structure(self):
+    def read_tile_structure(self) -> None:
+        """
+        Parse the root NetCDF file and populate zoom-level parameters.
+        """
         # Read netcdf file with dimensions
-        nc_file = os.path.join(self.local_path, self.name + ".nc")
+        nc_file = os.path.join(self.local_path, f"{self.name}.nc")
         ds = nc.Dataset(nc_file)
         self.pixels_in_tile = ds["tile_size_x"][0]
         self.nr_zoom_levels = ds.dimensions["zoom_levels"].size
@@ -65,9 +80,39 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
             zl.nr_tiles_y = ds["nr_tiles_y"][izoom]
             self.zoom_level.append(zl)
 
-    def get_data(self, xl, yl, max_cell_size, waitbox=None):
+    def get_data(
+        self,
+        xl: list[float],
+        yl: list[float],
+        max_cell_size: float,
+        waitbox=None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Reads data from database. Returns x, y, z in same coordinate system as dataset. Resolution is determined by max_cell_size.
+        Read depth data for a bounding box at the appropriate zoom level.
+
+        Selects the zoom level whose grid spacing is closest to (but not
+        larger than) *max_cell_size*, downloads missing tiles when remote
+        access is configured, and returns cropped ``x``, ``y``, ``z`` arrays.
+
+        Parameters
+        ----------
+        xl : list[float]
+            ``[x_min, x_max]`` in the dataset's coordinate system.
+        yl : list[float]
+            ``[y_min, y_max]`` in the dataset's coordinate system.
+        max_cell_size : float
+            Maximum grid spacing in metres used for zoom-level selection.
+        waitbox : optional
+            Reserved for a progress-dialog object; currently unused.
+
+        Returns
+        -------
+        x : np.ndarray
+            1-D x coordinate array (or ``np.nan`` on failure).
+        y : np.ndarray
+            1-D y coordinate array (or ``np.nan`` on failure).
+        z : np.ndarray
+            2-D depth array (or ``np.nan`` on failure).
         """
 
         izoom = 0
@@ -123,19 +168,17 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
 
             iav = self.zoom_level[ilev].i_available
             if not np.any(iav):
-                ncfile = os.path.join(self.local_path, self.name + ".nc")
+                ncfile = os.path.join(self.local_path, f"{self.name}.nc")
                 ds = nc.Dataset(ncfile)
-                iav = ds["available_zl" + str(ilev + 1).zfill(2)][:].data
+                iav = ds[f"available_zl{str(ilev + 1).zfill(2)}"][:].data
                 self.zoom_level[ilev].i_available = iav
-
-            #            vert_unit = self.vertical_coordinate_system.unit
 
             tile_size_x = dx * nx
             tile_size_y = dy * ny
 
             # Directories and names
             name = self.name
-            levdir = "zl" + str(ilev + 1).zfill(2)
+            levdir = f"zl{str(ilev + 1).zfill(2)}"
 
             iopendap = False
             ipdrive = False
@@ -143,11 +186,11 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
             if self.url[0:4] == "http":
                 # Tiles stored on OpenDAP server
                 iopendap = True
-                remotedir = self.url + "/" + levdir + "/"
+                remotedir = f"{self.url}/{levdir}/"
                 localdir = os.path.join(self.local_path, levdir)
             elif self.url[0:2].lower() == "p:":
                 ipdrive = True
-                remotedir = self.url + "\\" + levdir + "\\"
+                remotedir = f"{self.url}\\{levdir}\\"
                 localdir = os.path.join(self.local_path, levdir)
             else:
                 # Tiles are stored locally
@@ -155,9 +198,6 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
                 remotedir = localdir
 
             # Tiles
-            # Array with x and y origin of available tiles
-            # all_tiles_x0 = np.arange(x0, x0 + (nnx)*tile_size_x, tile_size_x)
-            # all_tiles_y0 = np.arange(y0, y0 + (nny)*tile_size_y, tile_size_y)
             all_tiles_x0 = np.linspace(x0, x0 + (nnx - 1) * tile_size_x, num=nnx)
             all_tiles_y0 = np.linspace(y0, y0 + (nny - 1) * tile_size_y, num=nny)
 
@@ -181,16 +221,15 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
                 or all_tiles_x0[-1] + tile_size_x < xl[0]
                 or all_tiles_y0[-1] + tile_size_y < yl[0]
             ):
-                ok = False
                 print("Tiles are outside of search range")
                 return x, y, z
 
             ix1 = find_last(all_tiles_x0 <= xl[0])
-            if ix1 == None:
+            if ix1 is None:
                 ix1 = 0
             ix2 = find_last(all_tiles_x0 < xl[1])
             iy1 = find_last(all_tiles_y0 <= yl[0])
-            if iy1 == None:
+            if iy1 is None:
                 iy1 = 0
             iy2 = find_last(all_tiles_y0 < yl[1])
 
@@ -209,13 +248,7 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
 
             if not just_get_tiles:
                 # Mesh of horizontal coordinates
-                # x = np.arange(tiles_x0[0],
-                #                tiles_x0[-1] + tile_size_x, dx)
-                # y = np.arange(tiles_y0[0],
-                #                tiles_y0[-1] + tile_size_y, dy)
-
                 x = np.linspace(tiles_x0[0], tiles_x0[0] + (npixx - 1) * dx, num=npixx)
-                #                x = np.linspace(tiles_x0[0], tiles_x0[-1] + tile_size_x - dx, num=nnnx*nx)
                 y = np.linspace(
                     tiles_y0[0], tiles_y0[-1] + tile_size_y - dy, num=nnny * ny
                 )
@@ -233,9 +266,6 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
             tilen = 0  # Tile number index (only used for waitbox)
             ntiles = nnnx * (iy2 - iy1 + 1)  # Total number of tiles
 
-            #             if not quiet
-            #                 wb = awaitbar(0,'Getting tiles ...')
-
             # Now get the tiles
             for i in range(nnnx):
                 itile = tiles_index_x[i]
@@ -248,17 +278,11 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
                     zzz = np.empty((ny, nx))  # make empty tile
                     zzz[:] = np.nan
 
-                    # First check whether required file exists at at all
-
+                    # First check whether required file exists at all
                     file_name = (
-                        name
-                        + "."
-                        + levdir
-                        + "."
-                        + str(itile + 1).zfill(5)
-                        + "."
-                        + str(jtile + 1).zfill(5)
-                        + ".nc"
+                        f"{name}.{levdir}."
+                        f"{str(itile + 1).zfill(5)}."
+                        f"{str(jtile + 1).zfill(5)}.nc"
                     )
 
                     tile_exists = False
@@ -299,11 +323,11 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
                                         os.mkdir(localdir)
                                     # Download file
                                     try:
-                                        print("Downloading tile " + file_name + " ...")
+                                        print(f"Downloading tile {file_name} ...")
                                         urllib.request.urlretrieve(
                                             remotedir + file_name, full_file_name
                                         )
-                                    except:
+                                    except Exception:
                                         print("Could not download tile ...")
 
                                 ncfile = full_file_name  # name of local netcdf file
@@ -330,7 +354,7 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
                                             os.path.join(remotedir, file_name),
                                             full_file_name,
                                         )
-                                    except:
+                                    except Exception:
                                         print("Could not copy tile ...")
 
                                 ncfile = full_file_name  # name of local netcdf file
@@ -342,16 +366,13 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
                         else:
                             ncfile = full_file_name
 
-                        #                        print(ncfile)
                         if not just_get_tiles:
                             # Read the data in the tile
                             if os.path.exists(ncfile):
                                 ds = nc.Dataset(ncfile)
                                 zzz = ds[var_str][:]
-                            #                            fill_value = nc_attget(ncfile, 'depth', 'fill_value')
 
                             # Now stick the tile data in the large array
-
                             i1 = istartx[i]
                             i2 = istartx[i] + nx
 
@@ -360,28 +381,19 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
 
                             z[j1:j2, i1:i2] = zzz
 
-            #             # # Close waitbar
-            #             # if ~quiet
-            #             #     if ~isempty(hh)
-            #             #         close(wb);
-            #             #     end
-            #             # end
-
             # Now crop the data to the requested limits
             if not just_get_tiles:
-                #                z(z<-15000)=NaN # Set values to NaN
-
                 ix1 = find_last(x <= xl[0])
-                if ix1 == None:
+                if ix1 is None:
                     ix1 = 0
                 ix2 = find_first(x > xl[1])
-                if ix2 == None:
+                if ix2 is None:
                     ix2 = len(x)
                 iy1 = find_last(y <= yl[0])
-                if iy1 == None:
+                if iy1 is None:
                     iy1 = 0
                 iy2 = find_first(y > yl[1])
-                if iy2 == None:
+                if iy2 is None:
                     iy2 = len(y)
 
                 x = x[ix1:ix2]
@@ -406,7 +418,20 @@ class BathymetryDatasetNetCDFTilesV2(BathymetryDataset):
         return x, y, z
 
 
-def find_first(a):
+def find_first(a: np.ndarray) -> Optional[int]:
+    """
+    Return the index of the first ``True`` element in a boolean array.
+
+    Parameters
+    ----------
+    a : np.ndarray
+        Boolean (or integer) array.
+
+    Returns
+    -------
+    int or None
+        Index of the first non-zero element, or ``None`` if none exist.
+    """
     if not a.any():
         i = None
     else:
@@ -414,7 +439,20 @@ def find_first(a):
     return i
 
 
-def find_last(a):
+def find_last(a: np.ndarray) -> Optional[int]:
+    """
+    Return the index of the last ``True`` element in a boolean array.
+
+    Parameters
+    ----------
+    a : np.ndarray
+        Boolean (or integer) array.
+
+    Returns
+    -------
+    int or None
+        Index of the last non-zero element, or ``None`` if none exist.
+    """
     if not a.any():
         i = None
     else:
@@ -422,14 +460,38 @@ def find_last(a):
     return i
 
 
-def dict2yaml(file_name, dct, sort_keys=False):
+def dict2yaml(file_name: str, dct: dict, sort_keys: bool = False) -> None:
+    """
+    Serialise a dictionary to a YAML file.
+
+    Parameters
+    ----------
+    file_name : str
+        Destination file path.
+    dct : dict
+        Data to serialise.
+    sort_keys : bool, optional
+        Whether to sort dictionary keys.  Default is ``False``.
+    """
     yaml_string = yaml.dump(dct, sort_keys=sort_keys)
-    file = open(file_name, "w")
-    file.write(yaml_string)
-    file.close()
+    with open(file_name, "w") as file:
+        file.write(yaml_string)
 
 
-def yaml2dict(file_name):
-    file = open(file_name, "r")
-    dct = yaml.load(file, Loader=yaml.FullLoader)
+def yaml2dict(file_name: str) -> dict:
+    """
+    Load a YAML file into a dictionary.
+
+    Parameters
+    ----------
+    file_name : str
+        Path to the YAML file.
+
+    Returns
+    -------
+    dict
+        Parsed contents of the YAML file.
+    """
+    with open(file_name, "r") as file:
+        dct = yaml.load(file, Loader=yaml.FullLoader)
     return dct
